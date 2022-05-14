@@ -21,8 +21,8 @@ def print_help_msg(command) -> None:
 
 @click.command()
 @click.option("-i", "--input", help="Folder with all the Intensity files", required=True)
-@click.option("-o", "--output", help="Prefix name for the file to group by condition")
-@click.option("-p", "--pattern", help="Prefix of the pattern name for all the files in the folder")
+@click.option("-o", "--output", help="Folder name for the file to group by condition")
+@click.option("-p", "--pattern", help="Prefix of the pattern name for all the files in the folder (Intensities)")
 def merge_condition_generation(input: str, output: str, pattern: str) -> None:
   """
   Merge all the files in a folder with the specific pattern
@@ -39,6 +39,7 @@ def merge_condition_generation(input: str, output: str, pattern: str) -> None:
   print(concatenated_df.head())
 
   for k, g in concatenated_df.groupby([CONDITION]):
+    k = k.replace(" ", "-")  # We need to replace all spaces with -
     g.to_csv(f'{output}/{k}-grouped-Intensities.tsv', index=False, sep='\t')  # '{}.csv'.format(k)
 
 

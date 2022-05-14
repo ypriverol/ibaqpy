@@ -6,6 +6,7 @@ import seaborn as sns
 from pandas import DataFrame
 import qnorm
 import re
+import os
 
 from ibaqpy_commons import remove_contaminants_decoys, INTENSITY, SAMPLE_ID, NORM_INTENSITY, \
     PEPTIDE_SEQUENCE, CONDITION, PEPTIDE_CHARGE, FRACTION, RUN, BIOREPLICATE, RT, PEPTIDE_CANONICAL, SEARCH_ENGINE
@@ -37,7 +38,8 @@ def remove_outliers_iqr(dataset: DataFrame):
 
     dataset.query('(@Q1 - 1.5 * @IQR) <= Intensity <= (@Q3 + 1.5 * @IQR)', inplace=True)
 
-def plot_distributions(dataset: DataFrame, field: str, class_field: str, log2: bool = True) -> None:
+def plot_distributions(dataset: DataFrame, field: str, class_field: str,
+                       file_name: str = None, log2: bool = True, show: bool = False) -> None:
     """
     Print the quantile plot for the dataset
     :param dataset: DataFrame
@@ -54,11 +56,16 @@ def plot_distributions(dataset: DataFrame, field: str, class_field: str, log2: b
     data_wide = normalize.pivot(columns=class_field,
                                 values=field)
     # plotting multiple density plot
-    data_wide.plot.kde(figsize=(8, 6), linewidth=2, legend=False)
+    if show:
+        data_wide.plot.kde(figsize=(8, 6), linewidth=2, legend=False)
+    if file_name is not None:
+        plot = data_wide.plot.kde(figsize=(8, 6), linewidth=2, legend=False)
+        plot.figure.savefig(file_name)
+
     pd.set_option('mode.chained_assignment', 'warn')
 
 def plot_box_plot(dataset: DataFrame, field: str, class_field: str, log2: bool = False, weigth: int = 10,
-                  rotation: int = 45, title: str = "", violin: bool = False) -> None:
+                  rotation: int = 45, title: str = "", violin: bool = False, file_name: str = None, show: bool = False) -> None:
     """
     Plot a box plot of two values field and classes field
     :param violin: Also add violin on top of box plot
@@ -85,7 +92,12 @@ def plot_box_plot(dataset: DataFrame, field: str, class_field: str, log2: bool =
 
     chart.set(title=title)
     chart.set_xticklabels(chart.get_xticklabels(), rotation=rotation)
-    plt.show()
+    if show:
+        plt.show()
+    if file_name is not None:
+        fig = chart.get_figure()
+        fig.savefig(file_name)
+
     pd.set_option('mode.chained_assignment', 'warn')
 
 def remove_missing_values(normalize_df: DataFrame, ratio: float = 0.3) -> DataFrame:
@@ -224,15 +236,18 @@ def average_peptide_intensities(dataset: DataFrame) -> DataFrame:
 @click.option("--compress", help="Read the input peptides file in compress gzip file", is_flag= True)
 @click.option("--log2", help="Transform to log2 the peptide intensity values before normalization", is_flag=True)
 @click.option("--violin", help="Use violin plot instead of boxplot for distribution representations", is_flag=True)
+@click.option("--show", help="Show the plots for each steps", is_flag=True)
 @click.option("--verbose",
               help="Print addition information about the distributions of the intensities, number of peptides remove after normalization, etc.",
               is_flag=True)
 def peptide_normalization(peptides: str, contaminants: str, routliers: bool, output: str, nmethod: str, compress: bool, log2: bool,
-                          violin: bool, verbose: bool) -> None:
+                          violin: bool, show: bool, verbose: bool) -> None:
 
     if peptides is None or output is None:
         print_help_msg(peptide_normalization)
         exit(1)
+
+    output_file_prefix = os.path.splitext(output)[0]
 
     pd.set_option('display.max_columns', None)
     # TODO infer from filename
@@ -249,29 +264,29 @@ def peptide_normalization(peptides: str, contaminants: str, routliers: bool, out
 
     # Print the distribution of the original peptide intensities from quantms analysis
     if verbose:
-        plot_distributions(dataset_df, INTENSITY, SAMPLE_ID, log2=not log2)
+        plot_distributions(dataset_df, INTENSITY, SAMPLE_ID, log2=not log2, file_name=output_file_prefix+"-{}-{}.pdf".format("distribution","non-normalize"), show = show)
         plot_box_plot(dataset_df, INTENSITY, SAMPLE_ID, log2=not log2,
-                      title="Original peptide intensity distribution (no normalization)", violin=violin)
+                      title="Original peptide intensity distribution (no normalization)", violin=violin, file_name=output_file_prefix+"-{}-{}.pdf".format("boxplot","non-normalize"), show=show)
 
     # Remove high abundant and contaminants proteins and the outliers
     if contaminants is not None:
         print("Remove contaminants...")
-        dataset_df = remove_contaminants_decoys(dataset_df, "contaminants_ids.tsv")
+        dataset_df = remove_contaminants_decoys(dataset_df, contaminants_file=contaminants)
     print_dataset_size(dataset_df, "Peptides after contaminants removal: ", verbose)
 
     if verbose:
-        plot_distributions(dataset_df, NORM_INTENSITY, SAMPLE_ID, log2=not log2)
+        plot_distributions(dataset_df, NORM_INTENSITY, SAMPLE_ID, log2=not log2, file_name=output_file_prefix+"-{}-{}.pdf".format("distribution","contaminant-remove"), show = show)
         plot_box_plot(dataset_df, NORM_INTENSITY, SAMPLE_ID, log2=not log2,
-                      title="Peptide intensity distribution after contaminants removal", violin=violin)
+                      title="Peptide intensity distribution after contaminants removal", violin=violin, file_name=output_file_prefix+"-{}-{}.pdf".format("boxplot","contaminant-remove"), show = show)
 
     print("Normalize intensities.. ")
     dataset_df = intensity_normalization(dataset_df, field=NORM_INTENSITY, class_field=SAMPLE_ID, scaling_method=nmethod)
 
     if verbose:
         log_after_norm = nmethod == "msstats" or nmethod == "qnorm" or ((nmethod == "quantile" or nmethod == "robust") and not log2)
-        plot_distributions(dataset_df, NORM_INTENSITY, SAMPLE_ID, log2=log_after_norm)
+        plot_distributions(dataset_df, NORM_INTENSITY, SAMPLE_ID, log2=log_after_norm, file_name=output_file_prefix+"-{}-{}.pdf".format("distribution","normalized"), show = show)
         plot_box_plot(dataset_df, NORM_INTENSITY, SAMPLE_ID, log2=log_after_norm,
-                      title="Peptide intensity distribution after imputation, normalization method: " + nmethod, violin=violin)
+                      title="Peptide intensity distribution after imputation, normalization method: " + nmethod, violin=violin, file_name=output_file_prefix+"-{}-{}.pdf".format("boxplot","normalized"), show = show)
 
     print("Select the best peptidoform across fractions...")
     print("Number of peptides before peptidofrom selection: " + str(len(dataset_df.index)))
@@ -294,11 +309,9 @@ def peptide_normalization(peptides: str, contaminants: str, routliers: bool, out
 
     if verbose:
         log_after_norm = nmethod == "msstats" or nmethod == "qnorm" or ((nmethod == "quantile" or nmethod == "robust") and not log2)
-        plot_distributions(dataset_df, NORM_INTENSITY, SAMPLE_ID, log2=log_after_norm)
+        plot_distributions(dataset_df, NORM_INTENSITY, SAMPLE_ID, log2=log_after_norm, file_name=output_file_prefix+"-{}-{}.pdf".format("distribution","final"), show = show)
         plot_box_plot(dataset_df, NORM_INTENSITY, SAMPLE_ID, log2=log_after_norm,
-                      title="Peptide intensity distribution after imputation, normalization method: " + nmethod, violin=True)
-
-
+                      title="Peptide intensity distribution after imputation, normalization method: " + nmethod, violin=True, file_name=output_file_prefix+"-{}-{}.pdf".format("boxplot","final"), show = show)
 
 if __name__ == '__main__':
     peptide_normalization()
