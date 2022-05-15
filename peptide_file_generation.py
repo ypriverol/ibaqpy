@@ -2,6 +2,7 @@ import gzip
 import os
 import re
 import shutil
+import secrets
 
 import click
 import pandas as pd
@@ -135,10 +136,11 @@ def peptide_file_generation(triqler: str, msstats: str, mztab: str, sdrf: str, c
     mztab_df = mztab_reader.MzTab(mztab)
   else:
     with gzip.open(mztab, 'rb') as f_in:
-      with open('file.mzTab', 'wb') as f_out:
+      tmp_mztab_name = secrets.token_hex(nbytes=16) + ".mztab"
+      with open(tmp_mztab_name, 'wb') as f_out:
         shutil.copyfileobj(f_in, f_out)
-      mztab_df = mztab_reader.MzTab('file.mzTab')
-      os.remove('file.mzTab')
+      mztab_df = mztab_reader.MzTab(tmp_mztab_name)
+      os.remove(tmp_mztab_name)
 
   psms_df = mztab_df.spectrum_match_table
   psms_df[REFERENCE] = psms_df['spectra_ref'].apply(get_run_mztab, metadata=mztab_df.metadata)
