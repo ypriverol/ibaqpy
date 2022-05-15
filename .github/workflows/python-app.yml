@@ -40,4 +40,6 @@ jobs:
     - name: Test with normalization
       run: |
         python peptide_normalization.py --log2 --peptides ./data/heart-grouped-Intensities.tsv --contaminants contaminants_ids.tsv --routliers --output data/heart-grouped-Intensities-Norm.tsv --verbose --nmethod qnorm
-
+    - name: Test ibaq
+      run: |
+        python compute_ibaq.py --output data/heart-grouped-ibaq.tsv --peptides data/heart-grouped-Intensities-Norm.tsv --fasta data/Homo-sapiens-uniprot-reviewed-isoforms-contaminants-decoy-202105.fasta --normalize --quality --contaminants contaminants_ids.tsv
