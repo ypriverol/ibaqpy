@@ -5,7 +5,9 @@ import pandas as pd
 from pandas import DataFrame, Series
 from pyopenms import *
 
-from ibaqpy_commons import remove_contaminants_decoys, PROTEIN_NAME, INTENSITY, CONDITION, IBAQ, IBAQ_LOG, IBAQ_PPB
+from ibaqpy_commons import remove_contaminants_decoys, PROTEIN_NAME, CONDITION, IBAQ, IBAQ_LOG, IBAQ_PPB, \
+    NORM_INTENSITY, SAMPLE_ID
+
 
 def print_help_msg(command):
     """
@@ -25,6 +27,7 @@ def normalize_ibaq(res: DataFrame) -> DataFrame:
     :return:
     """
 
+    res = res[~res.isin([np.nan, np.inf, -np.inf]).any(1)]
     # Get the total intensity for the sample.
     total_ibaq = res[IBAQ].sum()
     # Normalization method used by Proteomics DB 10 + log10(ibaq/sum(ibaq))
@@ -41,8 +44,9 @@ def normalize_ibaq(res: DataFrame) -> DataFrame:
 @click.option("-n", "--normalize", help="Normalize IBAQ values using by using the total IBAQ of the experiment",
               is_flag=True)
 @click.option("-c", "--contaminants", help="Contaminants protein accession", default="contaminants_ids.tsv")
+@click.option("-q", "--quality", help="Applied quality control rules to remove week evidences", is_flag = True)
 @click.option("-o", "--output", help="Output file with the proteins and ibaq values")
-def ibaq_compute(fasta: str, peptides: str, enzyme: str, normalize: bool, contaminants_file: str, output: str) -> None:
+def ibaq_compute(fasta: str, peptides: str, enzyme: str, normalize: bool, contaminants: str, quality: bool, output: str) -> None:
     """
     This command computes the IBAQ values for a file output of peptides with the format described in
     peptide_contaminants_file_generation.py.
@@ -73,11 +77,11 @@ def ibaq_compute(fasta: str, peptides: str, enzyme: str, normalize: bool, contam
         :param pdrow: peptide row
         :return: average intensity
         """
-        proteins = pdrow.name.split(';')
+        proteins = pdrow.name[0].split(';')
         summ = 0
         for prot in proteins:
             summ += uniquepepcounts[prot]
-        return pdrow.intensity / (summ / len(proteins))
+        return pdrow.NormIntensity / (summ / len(proteins))
 
     for entry in fasta_proteins:
         digest = list()  # type: list[str]
@@ -89,20 +93,25 @@ def ibaq_compute(fasta: str, peptides: str, enzyme: str, normalize: bool, contam
     print(data.head())
     # next line assumes unique peptides only (at least per indistinguishable group)
 
-    res = pd.DataFrame(data.groupby(PROTEIN_NAME)[INTENSITY].sum()).apply(get_average_nr_peptides_unique_bygroup, 1)
-    res = res.sort_values(ascending=False)
-    res = res.to_frame()
-    res[PROTEIN_NAME] = res.index
-    res = res.rename(columns={0: IBAQ})
-    res = res[[PROTEIN_NAME, IBAQ]]
+    dataf = None
+    if quality:
+      dataf = data.groupby([PROTEIN_NAME, SAMPLE_ID, CONDITION])[NORM_INTENSITY].count()
+      dataf = dataf[dataf > 1]
 
-    res = remove_contaminants_decoys(res, contaminants_file, protein_field=PROTEIN_NAME)
+    res = pd.DataFrame(data.groupby([PROTEIN_NAME, SAMPLE_ID, CONDITION])[NORM_INTENSITY].sum()).apply(get_average_nr_peptides_unique_bygroup, 1)
+    res = res.sort_values(ascending=False)
+    res = res.reset_index()
+    res = res.rename(columns={0: IBAQ})
+
+    res = remove_contaminants_decoys(res, contaminants, protein_field=PROTEIN_NAME)
     if normalize:
         res = normalize_ibaq(res)
 
-    # For absolute expression the relation is one sample + one condition
-    condition = data[CONDITION].unique()[0]
-    res[CONDITION] = condition.lower()
+    if quality and dataf is not None:
+        res.set_index([PROTEIN_NAME, SAMPLE_ID, CONDITION], inplace=True)
+        res = res.loc[dataf.index,:]
+        res = res.reset_index()
+        print(res)
 
     res.to_csv(output, index=False)
 

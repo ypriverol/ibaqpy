@@ -25,7 +25,7 @@ IBAQ_LOG = 'IbaqLog'
 IBAQ_PPB = 'IbaqPpb'
 
 
-def remove_contaminants_decoys(dataset: DataFrame, contaminants_file: str, protein_field=PROTEIN_NAME) -> DataFrame:
+def remove_contaminants_decoys(dataset: DataFrame, contaminants: str, protein_field=PROTEIN_NAME) -> DataFrame:
     """
     This method reads a file with a list of contaminants and high abudant proteins and
     remove them from the dataset.
@@ -34,14 +34,14 @@ def remove_contaminants_decoys(dataset: DataFrame, contaminants_file: str, prote
     :param protein_field: protein field
     :return: dataset with the filtered proteins
     """
-    contaminants_reader = open(contaminants_file, 'r')
-    contaminants = contaminants_reader.read().split("\n")
-    contaminants = [cont for cont in contaminants if cont.strip()]
+    contaminants_reader = open(contaminants, 'r')
+    contaminants_list = contaminants_reader.read().split("\n")
+    contaminants_list = [cont for cont in contaminants_list if cont.strip()]
 
-    contaminants.append('CONTAMINANTS')
-    contaminants.append('DECOY')
+    contaminants_list.append('CONTAMINANT')
+    contaminants_list.append('DECOY')
     #cregex = ".*(" + '|'.join(contaminants) + ").*"
-    cregex = '|'.join(contaminants)
+    cregex = '|'.join(contaminants_list)
     #for contaminant in contaminants:
         #dataset.drop(index=dataset[dataset[protein_field].str.contains(contaminant)].index, inplace=True)
 

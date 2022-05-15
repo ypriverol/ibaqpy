@@ -9,7 +9,8 @@ import re
 import os
 
 from ibaqpy_commons import remove_contaminants_decoys, INTENSITY, SAMPLE_ID, NORM_INTENSITY, \
-    PEPTIDE_SEQUENCE, CONDITION, PEPTIDE_CHARGE, FRACTION, RUN, BIOREPLICATE, RT, PEPTIDE_CANONICAL, SEARCH_ENGINE
+    PEPTIDE_SEQUENCE, CONDITION, PEPTIDE_CHARGE, FRACTION, RUN, BIOREPLICATE, RT, PEPTIDE_CANONICAL, SEARCH_ENGINE, \
+    PROTEIN_NAME
 
 
 def print_dataset_size(dataset: DataFrame, message: str, verbose: bool) -> None:
@@ -136,11 +137,11 @@ def intensity_normalization(dataset: DataFrame, field: str, class_field: str = "
 
     elif scaling_method == 'qnorm':
         # pivot to have one col per sample
-        normalize_df = pd.pivot_table(dataset, index=[PEPTIDE_SEQUENCE, PEPTIDE_CHARGE, FRACTION, RUN, BIOREPLICATE, RT, SEARCH_ENGINE],
+        normalize_df = pd.pivot_table(dataset, index=[CONDITION, PROTEIN_NAME, PEPTIDE_SEQUENCE, PEPTIDE_CHARGE, FRACTION, RUN, BIOREPLICATE, RT, SEARCH_ENGINE],
                                       columns=class_field, values=field, aggfunc={field: np.mean})
         normalize_df = qnorm.quantile_normalize(normalize_df, axis=1)
         normalize_df = normalize_df.reset_index()
-        normalize_df = normalize_df.melt(id_vars=[PEPTIDE_SEQUENCE, PEPTIDE_CHARGE, FRACTION, RUN, BIOREPLICATE, RT, SEARCH_ENGINE])
+        normalize_df = normalize_df.melt(id_vars=[CONDITION, PROTEIN_NAME, PEPTIDE_SEQUENCE, PEPTIDE_CHARGE, FRACTION, RUN, BIOREPLICATE, RT, SEARCH_ENGINE])
         normalize_df.rename(columns={'value': NORM_INTENSITY}, inplace=True)
         print(dataset.head())
         return normalize_df
@@ -213,7 +214,7 @@ def sum_peptidoform_intensities(dataset: DataFrame) -> DataFrame:
     :return: dataframe with the intensities
     """
     dataset = dataset[dataset[NORM_INTENSITY].notna()]
-    dataset = dataset.groupby([PEPTIDE_CANONICAL, SAMPLE_ID, BIOREPLICATE])[NORM_INTENSITY].sum()
+    dataset = dataset.groupby([CONDITION, PROTEIN_NAME, PEPTIDE_CANONICAL, SAMPLE_ID, BIOREPLICATE])[NORM_INTENSITY].sum()
     dataset = dataset.reset_index()
     return dataset
 
@@ -223,15 +224,21 @@ def average_peptide_intensities(dataset: DataFrame) -> DataFrame:
     :param dataset: Dataframe containing all the peptidoforms
     :return: New dataframe
     """
-    dataset = dataset.groupby([PEPTIDE_CANONICAL, SAMPLE_ID])[NORM_INTENSITY].median()
+    dataset = dataset.groupby([CONDITION, PROTEIN_NAME, PEPTIDE_CANONICAL, SAMPLE_ID])[NORM_INTENSITY].median()
     dataset = dataset.reset_index()
     return dataset
+
+def compute_correlations_cross_samples(dataset: DataFrame) -> None:
+    normalize_df = pd.pivot_table(dataset,
+                                  index=[CONDITION, PROTEIN_NAME, PEPTIDE_CANONICAL],
+                                  columns=SAMPLE_ID, values=NORM_INTENSITY)
+    print(normalize_df[list(normalize_df.columns)].corr())
 
 @click.command()
 @click.option("--peptides", help="Peptides files from the peptide file generation tool")
 @click.option("--contaminants", help="Contaminants and high abundant proteins to be removed")
 @click.option("--routliers", help="Remove outliers from the peptide table", is_flag=True)
-@click.option("--output", help="Peptide intensity file including other all properties for normalization")
+@click.option("--output", help="Peptide intensity normalized")
 @click.option('--nmethod', help="Normalization method used to normalize intensities for all samples (options: quantile, robusts, standard)", default="quantile")
 @click.option("--compress", help="Read the input peptides file in compress gzip file", is_flag= True)
 @click.option("--log2", help="Transform to log2 the peptide intensity values before normalization", is_flag=True)
@@ -312,6 +319,10 @@ def peptide_normalization(peptides: str, contaminants: str, routliers: bool, out
         plot_distributions(dataset_df, NORM_INTENSITY, SAMPLE_ID, log2=log_after_norm, file_name=output_file_prefix+"-{}-{}.pdf".format("distribution","final"), show = show)
         plot_box_plot(dataset_df, NORM_INTENSITY, SAMPLE_ID, log2=log_after_norm,
                       title="Peptide intensity distribution after imputation, normalization method: " + nmethod, violin=True, file_name=output_file_prefix+"-{}-{}.pdf".format("boxplot","final"), show = show)
+
+    compute_correlations_cross_samples(dataset_df)
+
+    dataset_df.to_csv(output, index=False, sep='\t')
 
 if __name__ == '__main__':
     peptide_normalization()
