@@ -278,7 +278,7 @@ def peptide_normalization(peptides: str, contaminants: str, routliers: bool, out
     # Remove high abundant and contaminants proteins and the outliers
     if contaminants is not None:
         print("Remove contaminants...")
-        dataset_df = remove_contaminants_decoys(dataset_df, contaminants_file=contaminants)
+        dataset_df = remove_contaminants_decoys(dataset_df, contaminants=contaminants)
     print_dataset_size(dataset_df, "Peptides after contaminants removal: ", verbose)
 
     if verbose:
