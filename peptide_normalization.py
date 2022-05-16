@@ -256,6 +256,8 @@ def peptide_normalization(peptides: str, contaminants: str, routliers: bool, out
 
     output_file_prefix = os.path.splitext(output)[0]
 
+    print("Compute the Global FDR..")
+
     pd.set_option('display.max_columns', None)
     # TODO infer from filename
     print("Loading data..")

@@ -6,7 +6,7 @@ from pandas import DataFrame, Series
 from pyopenms import *
 
 from ibaqpy_commons import remove_contaminants_decoys, PROTEIN_NAME, CONDITION, IBAQ, IBAQ_LOG, IBAQ_PPB, \
-    NORM_INTENSITY, SAMPLE_ID
+    NORM_INTENSITY, SAMPLE_ID, PEPTIDE_CANONICAL
 
 
 def print_help_msg(command):
@@ -50,6 +50,11 @@ def ibaq_compute(fasta: str, peptides: str, enzyme: str, normalize: bool, contam
     """
     This command computes the IBAQ values for a file output of peptides with the format described in
     peptide_contaminants_file_generation.py.
+
+    quality control is based on two main rules:
+    - Proteins MUST contain at least two unique peptides to be considered identified
+    - Identified peptides MUST contains at least 8 AAs.
+
     :param fasta: Fasta file used to perform the peptide identification
     :param peptides: Peptide intensity file
     :param enzyme: Enzyme used to digest the protein sample
@@ -95,7 +100,11 @@ def ibaq_compute(fasta: str, peptides: str, enzyme: str, normalize: bool, contam
 
     dataf = None
     if quality:
-      dataf = data.groupby([PROTEIN_NAME, SAMPLE_ID, CONDITION])[NORM_INTENSITY].count()
+      # Check that peptides are higher than 6 aminoacids
+      mask = (data[PEPTIDE_CANONICAL].str.len() > 7)
+      dataf = data.loc[mask]
+      # Check that proteins contains more than 2 unique peptides per proteins.
+      dataf = dataf.groupby([PROTEIN_NAME, SAMPLE_ID, CONDITION])[NORM_INTENSITY].count()
       dataf = dataf[dataf > 1]
 
     res = pd.DataFrame(data.groupby([PROTEIN_NAME, SAMPLE_ID, CONDITION])[NORM_INTENSITY].sum()).apply(get_average_nr_peptides_unique_bygroup, 1)
