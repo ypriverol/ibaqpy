@@ -9,3 +9,4 @@ qnorm
 scikit_learn
 seaborn == 0.10
 typing_extensions
+tables

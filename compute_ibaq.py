@@ -92,7 +92,7 @@ def ibaq_compute(fasta: str, peptides: str, enzyme: str, normalize: bool, contam
         digest = list()  # type: list[str]
         digestor.digest(AASequence().fromString(entry.sequence), digest, MINLEN, MAXLEN)
         digestuniq = set(digest)
-        uniquepepcounts[entry.identifier.decode('utf-8')] = len(digestuniq)
+        uniquepepcounts[entry.identifier] = len(digestuniq)
 
     data = pd.read_csv(peptides, sep="\t")
     print(data.head())

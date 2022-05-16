@@ -7,6 +7,7 @@ from pandas import DataFrame
 import qnorm
 import re
 import os
+import secrets
 
 from ibaqpy_commons import remove_contaminants_decoys, INTENSITY, SAMPLE_ID, NORM_INTENSITY, \
     PEPTIDE_SEQUENCE, CONDITION, PEPTIDE_CHARGE, FRACTION, RUN, BIOREPLICATE, RT, PEPTIDE_CANONICAL, SEARCH_ENGINE, \
@@ -122,7 +123,7 @@ def get_canonical_peptide(peptide_sequence: str)-> str:
     clean_peptide = clean_peptide.replace(".","")
     return clean_peptide
 
-def intensity_normalization(dataset: DataFrame, field: str, class_field: str = "all", scaling_method: str = "msstats") -> DataFrame:
+def intensity_normalization(dataset: DataFrame, field: str, class_field: str = "all", scaling_method: str = "msstats", indisk: bool = False) -> DataFrame:
 
     ## TODO add imputation and/or removal to those two norm strategies
     if scaling_method == 'msstats':
@@ -139,7 +140,13 @@ def intensity_normalization(dataset: DataFrame, field: str, class_field: str = "
         # pivot to have one col per sample
         normalize_df = pd.pivot_table(dataset, index=[CONDITION, PROTEIN_NAME, PEPTIDE_SEQUENCE, PEPTIDE_CHARGE, FRACTION, RUN, BIOREPLICATE, RT, SEARCH_ENGINE],
                                       columns=class_field, values=field, aggfunc={field: np.mean})
-        normalize_df = qnorm.quantile_normalize(normalize_df, axis=1)
+        if indisk:
+            hdf_name = secrets.token_hex(nbytes=16) + ".parquet"
+            normalize_df.to_parquet(hdf_name)
+            df = pd.read_parquet(hdf_name)
+            normalize_df = qnorm.quantile_normalize(df, ncpus=4)
+        else:
+            normalize_df = qnorm.quantile_normalize(normalize_df, axis=1)
         normalize_df = normalize_df.reset_index()
         normalize_df = normalize_df.melt(id_vars=[CONDITION, PROTEIN_NAME, PEPTIDE_SEQUENCE, PEPTIDE_CHARGE, FRACTION, RUN, BIOREPLICATE, RT, SEARCH_ENGINE])
         normalize_df.rename(columns={'value': NORM_INTENSITY}, inplace=True)
@@ -253,11 +260,12 @@ def filter_by_peptide_length(row):
 @click.option("--violin", help="Use violin plot instead of boxplot for distribution representations", is_flag=True)
 @click.option("--show", help="Show the plots for each steps", is_flag=True)
 @click.option("--quality", help="Apply quality control to peptide information", is_flag=True)
+@click.option("--indisk", help="Perform the quantile normalization in disk, not in memory", is_flag = True)
 @click.option("--verbose",
               help="Print addition information about the distributions of the intensities, number of peptides remove after normalization, etc.",
               is_flag=True)
 def peptide_normalization(peptides: str, contaminants: str, routliers: bool, output: str, nmethod: str, compress: bool, log2: bool,
-                          violin: bool, show: bool, quality: bool, verbose: bool) -> None:
+                          violin: bool, show: bool, quality: bool, indisk: bool, verbose: bool) -> None:
 
     if peptides is None or output is None:
         print_help_msg(peptide_normalization)
@@ -303,13 +311,13 @@ def peptide_normalization(peptides: str, contaminants: str, routliers: bool, out
                       title="Peptide intensity distribution after contaminants removal", violin=violin, file_name=output_file_prefix+"-{}-{}.pdf".format("boxplot","contaminant-remove"), show = show)
 
     print("Normalize intensities.. ")
-    dataset_df = intensity_normalization(dataset_df, field=NORM_INTENSITY, class_field=SAMPLE_ID, scaling_method=nmethod)
+    dataset_df = intensity_normalization(dataset_df, field=NORM_INTENSITY, class_field=SAMPLE_ID, scaling_method=nmethod, indisk=indisk)
 
     if verbose:
         log_after_norm = nmethod == "msstats" or nmethod == "qnorm" or ((nmethod == "quantile" or nmethod == "robust") and not log2)
         plot_distributions(dataset_df, NORM_INTENSITY, SAMPLE_ID, log2=log_after_norm, file_name=output_file_prefix+"-{}-{}.pdf".format("distribution","normalized"), show = show)
         plot_box_plot(dataset_df, NORM_INTENSITY, SAMPLE_ID, log2=log_after_norm,
-                      title="Peptide intensity distribution after imputation, normalization method: " + nmethod, violin=violin, file_name=output_file_prefix+"-{}-{}.pdf".format("boxplot","normalized"), show = show)
+                      title="Peptide intensity distribution after imputation, normalization method: " + nmethod, violin=True, file_name=output_file_prefix+"-{}-{}.pdf".format("boxplot","normalized"), show = show)
 
     print("Select the best peptidoform across fractions...")
     print("Number of peptides before peptidofrom selection: " + str(len(dataset_df.index)))
