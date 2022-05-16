@@ -234,6 +234,14 @@ def compute_correlations_cross_samples(dataset: DataFrame) -> None:
                                   columns=SAMPLE_ID, values=NORM_INTENSITY)
     print(normalize_df[list(normalize_df.columns)].corr())
 
+def filter_by_peptide_length(row):
+    peptide = row[PEPTIDE_SEQUENCE]
+    canonical = get_canonical_peptide(peptide)
+    if len(canonical) > 7:
+        return True
+    else:
+        return False
+
 @click.command()
 @click.option("--peptides", help="Peptides files from the peptide file generation tool")
 @click.option("--contaminants", help="Contaminants and high abundant proteins to be removed")
@@ -244,19 +252,18 @@ def compute_correlations_cross_samples(dataset: DataFrame) -> None:
 @click.option("--log2", help="Transform to log2 the peptide intensity values before normalization", is_flag=True)
 @click.option("--violin", help="Use violin plot instead of boxplot for distribution representations", is_flag=True)
 @click.option("--show", help="Show the plots for each steps", is_flag=True)
+@click.option("--quality", help="Apply quality control to peptide information", is_flag=True)
 @click.option("--verbose",
               help="Print addition information about the distributions of the intensities, number of peptides remove after normalization, etc.",
               is_flag=True)
 def peptide_normalization(peptides: str, contaminants: str, routliers: bool, output: str, nmethod: str, compress: bool, log2: bool,
-                          violin: bool, show: bool, verbose: bool) -> None:
+                          violin: bool, show: bool, quality: bool, verbose: bool) -> None:
 
     if peptides is None or output is None:
         print_help_msg(peptide_normalization)
         exit(1)
 
     output_file_prefix = os.path.splitext(output)[0]
-
-    print("Compute the Global FDR..")
 
     pd.set_option('display.max_columns', None)
     # TODO infer from filename
@@ -282,6 +289,13 @@ def peptide_normalization(peptides: str, contaminants: str, routliers: bool, out
         print("Remove contaminants...")
         dataset_df = remove_contaminants_decoys(dataset_df, contaminants=contaminants)
     print_dataset_size(dataset_df, "Peptides after contaminants removal: ", verbose)
+
+    if quality:
+        print("Removing small peptides...")
+        mask = dataset_df.apply(filter_by_peptide_length, axis=1)
+        dataset_df = dataset_df[mask]
+        print(dataset_df.head())
+    print_dataset_size(dataset_df, "Peptides after small peptides (< 7AA) removal: ", verbose)
 
     if verbose:
         plot_distributions(dataset_df, NORM_INTENSITY, SAMPLE_ID, log2=not log2, file_name=output_file_prefix+"-{}-{}.pdf".format("distribution","contaminant-remove"), show = show)
